@@ -1,16 +1,25 @@
 import streamlit as st
 import pandas as pd
-import numpy as np
 import sqlite3
 from datetime import datetime
-# import google.generativeai as genai
+import google.generativeai as genai
 import os
+from dotenv import load_dotenv
+from model import predict
+
+# Load environment variables from .env file
+load_dotenv()
 
 # Configure Gemini API
-# def configure_genai():
-#     genai.configure(api_key=os.getenv('GOOGLE_API_KEY', 'your-api-key-here'))
-#     model = genai.GenerativeModel('gemini-pro')
-#     return model
+def configure_genai():
+    api_key = os.getenv('GOOGLE_API_KEY')  # Access the API key from .env file
+    if api_key is None:
+        raise ValueError("GOOGLE_API_KEY is not set in the .env file")
+    
+    # Initialize the Gemini API
+    genai.configure(api_key=api_key)
+    model = genai.GenerativeModel("gemini-pro")  # Load the Gemini-pro model
+    return model
 
 def create_database():
     conn = sqlite3.connect('system_reports.db')
@@ -87,14 +96,14 @@ def save_report_to_db(input_data, prediction, report_text):
     conn.close()
 
 def main():
+    # Set page config at the very beginning
+    st.set_page_config(page_title="System Status Predictor", layout="wide")
+    
     # Initialize database
     create_database()
     
-    # Initialize Gemini
-    # model = configure_genai()
-    
-    # Set page config
-    st.set_page_config(page_title="System Status Predictor", layout="wide")
+    # Initialize Gemini (Make sure the API key is loaded correctly)
+    model = configure_genai()
     
     # Create tabs
     tabs = st.tabs(["Prediction", "Report Generator", "Q&A"])
@@ -142,12 +151,28 @@ def main():
                     'Network_Traffic_Breach': network_traffic_breach,
                     'Firewall_Alerts': firewall_alerts
                 }
-                
+                result = predict(
+                    input_data['Grid_Voltage'],
+                    input_data['Grid_Frequency'],
+                    input_data['Cooling_Temperature'],
+                    input_data['Cooling_Humidity'],
+                    input_data['Error_Count'],
+                    input_data['CPU_Usage'],
+                    input_data['Memory_Usage'],
+                    input_data['Network_Traffic'],
+                    input_data['Network_Traffic_Breach'],
+                    input_data['Firewall_Alerts']
+                )
+                print(result)
+                if result == 0:
+                    st.write("NO ERRORS")
+                else:
+                    st.write("THERE IS A ERROR")
                 # Store in session state
                 st.session_state.current_input_data = input_data
                 
                 # Placeholder prediction logic
-                prediction = "Normal" if all([
+                prediction = "Normal" if all([  
                     cpu_usage < 80,
                     memory_usage < 80,
                     error_count < 10,
@@ -157,7 +182,7 @@ def main():
                 
                 st.session_state.current_prediction = prediction
                 
-                st.markdown("### System Status:")
+                st.markdown("### System Status: ")
                 if prediction == "Normal":
                     st.success("NORMAL")
                 else:
@@ -191,6 +216,7 @@ def main():
             st.warning("Please generate a prediction first!")
     
     # Q&A Tab
+    # Q&A Tab
     with tabs[2]:
         st.title("Q&A System")
         
@@ -198,20 +224,51 @@ def main():
         
         if user_question:
             if st.session_state.current_input_data and st.session_state.current_prediction:
-                # Prepare context for Gemini
-                context = f"""
+                # Prepare context with system information for more intelligent responses
+                system_context = f"""
+                You are a helpful system monitoring assistant. Here is the current system information:
+                
                 System Status: {st.session_state.current_prediction}
-                Current Metrics: {st.session_state.current_input_data}
-                Question: {user_question}
+                Grid Voltage: {st.session_state.current_input_data['Grid_Voltage']} V
+                Grid Frequency: {st.session_state.current_input_data['Grid_Frequency']} Hz
+                Cooling Temperature: {st.session_state.current_input_data['Cooling_Temperature']}°C
+                Cooling Humidity: {st.session_state.current_input_data['Cooling_Humidity']}%
+                File Integrity: {'Pass' if st.session_state.current_input_data['File_Integrity'] == 1 else 'Fail'}
+                Error Count: {st.session_state.current_input_data['Error_Count']}
+                CPU Usage: {st.session_state.current_input_data['CPU_Usage']}%
+                Memory Usage: {st.session_state.current_input_data['Memory_Usage']}%
+                Network Traffic: {st.session_state.current_input_data['Network_Traffic']} Mbps
+                Network Traffic Breach: {'Yes' if st.session_state.current_input_data['Network_Traffic_Breach'] == 1 else 'No'}
+                Firewall Alerts: {st.session_state.current_input_data['Firewall_Alerts']}
+
+                The system is considered abnormal if any of these conditions are met:
+                - CPU Usage >= 80%
+                - Memory Usage >= 80%
+                - Error Count >= 10
+                - Network Traffic Breach detected
+                - Firewall Alerts >= 5
+
+                Please provide a natural, conversational response to this question: {user_question}
+                
+                Focus on being direct and clear. Do not use asterisks or markdown formatting in your response.
+                If the user is asking about the current system status or state, include both the status (Normal/Abnormal) 
+                and explain why based on the thresholds above.
                 """
                 
                 try:
-                    response = model.generate_content(context)
-                    st.text_area("Answer", response.text, height=200)
+                    # Generate response using the enhanced context
+                    response = model.generate_content(system_context)
+                    
+                    # Clean up the response to remove any potential asterisks or markdown
+                    cleaned_response = response.text.replace('*', '').strip()
+                    
+                    # Display the response in a cleaner format
+                    st.markdown("### Answer:")
+                    st.write(cleaned_response)
+                    
                 except Exception as e:
                     st.error(f"Error generating response: {str(e)}")
             else:
                 st.warning("Please generate a prediction first!")
-
 if __name__ == "__main__":
     main()
