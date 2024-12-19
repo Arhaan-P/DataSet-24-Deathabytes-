@@ -177,10 +177,9 @@ def show_prediction_tab():
             st.markdown("### Input Summary:")
             st.dataframe(pd.DataFrame([input_data]))
             
-            generate_report = st.button("Generate Report")
-            if generate_report:
+            if st.button("Generate Report"):
                 st.session_state.current_tab = "Report Generator"
-                st.rerun()  # Using st.rerun() instead of experimental_rerun
+                st.rerun()
 
 def show_report_generator_tab():
     st.title("Report Generator")
@@ -219,7 +218,7 @@ def show_reports_tab():
             st.text(report['report_text'])
             if st.button("Delete Report", key=f"delete_{report['id']}"):
                 delete_report(report['id'])
-                st.rerun()  # Using st.rerun() instead of experimental_rerun
+                st.rerun()
 
 def show_qa_tab(model):
     st.title("Q&A System")
